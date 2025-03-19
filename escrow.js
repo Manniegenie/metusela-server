@@ -169,6 +169,10 @@ app.post('/webhook', verifyWebhook, async (req, res) => {
 
   if (webhook.event !== 'mono.events.account_updated') {
     return res.sendStatus(200);
+<<<<<<< HEAD
+=======
+    
+>>>>>>> 4e7f10c (Config add)
   }
 
   try {

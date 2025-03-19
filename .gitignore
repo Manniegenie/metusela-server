@@ -2,3 +2,4 @@
 node_modules/
 wallet.js
 monolink.js
+.github/workflows
