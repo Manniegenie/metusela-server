@@ -92,8 +92,9 @@ userSchema.virtual('formattedBalance').get(function () {
 
 const User = mongoose.model('User', userSchema);
 
-// Account Log Schema
-const accountLogSchema = new mongoose.Schema({
+// Simplified Bank Account Log Schema (only walletAddress and monoAccountId)
+
+const bankAccountLogSchema = new mongoose.Schema({
   monoAccountId: {
     type: String,
     required: true,
@@ -102,17 +103,8 @@ const accountLogSchema = new mongoose.Schema({
   },
   walletAddress: {
     type: String,
+    required: true,
     index: true
-  },
-  accountName: {
-    type: String,
-    default: 'Account 1'
-  },
-  details: {
-    institutionName: String,
-    accountNumber: String,
-    accountName: String,
-    balance: Number
   },
   createdAt: {
     type: Date,
@@ -120,12 +112,13 @@ const accountLogSchema = new mongoose.Schema({
   }
 });
 
-const AccountLog = mongoose.model('AccountLog', accountLogSchema);
+const BankAccountLog = mongoose.model('BankAccountLog', bankAccountLogSchema);
 
 // Middleware
 app.use(express.json());
 
 // Web3 authentication middleware
+
 const web3Auth = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) {
@@ -157,14 +150,77 @@ const web3Auth = (req, res, next) => {
 };
 
 // Webhook verification middleware
-const secret = process.env.MONO_SECRET_KEY;
+
 function verifyWebhook(req, res, next) {
-  if (req.headers['mono-webhook-secret'] !== secret) {
-    return res.status(401).json({ message: 'Unauthorized request.' });
+  const webhookSecret = req.headers['mono-webhook-secret'];
+  const expectedSecret = process.env.MONO_WEBHOOK_SECRET;
+
+  if (!webhookSecret || webhookSecret !== expectedSecret) {
+    return res.status(401).json({ error: 'Invalid or missing webhook secret' });
   }
+
   next();
 }
 
+// Webhook endpoint (simplified to store only walletAddress and monoAccountId)
+
+app.post('/webhook', verifyWebhook, async (req, res) => {
+  const webhook = req.body;
+
+  if (webhook.event !== 'mono.events.account_updated') {
+    return res.sendStatus(200);
+  }
+
+  try {
+    const { account } = webhook.data;
+    const monoAccountId = account._id;
+
+    const existingLog = await BankAccountLog.findOne({ monoAccountId });
+
+    if (existingLog && !existingLog.walletAddress.startsWith('unclaimed_')) {
+      return res.json({
+        status: 'successful',
+        message: 'Account already linked',
+        data: {
+          id: existingLog._id,
+          monoAccountId: existingLog.monoAccountId,
+          walletAddress: existingLog.walletAddress,
+          createdAt: existingLog.createdAt
+        }
+      });
+    }
+
+    const logEntry = await BankAccountLog.findOneAndUpdate(
+      { monoAccountId },
+      {
+        $set: {
+          walletAddress: existingLog?.walletAddress || `unclaimed_${monoAccountId}`
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    console.log(`Processed webhook for Mono account ${monoAccountId}`);
+    res.json({
+      status: 'successful',
+      message: 'Bank account log updated from webhook',
+      data: {
+        id: logEntry._id,
+        monoAccountId: logEntry.monoAccountId,
+        walletAddress: logEntry.walletAddress,
+        createdAt: logEntry.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Webhook processing error:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to process webhook', 
+      details: error.message 
+    });
+  }
+});
+
+// Connect wallet
 app.post('/connectwallet', async (req, res) => {
   try {
     const { walletAddress, signature, nonce } = req.body;
@@ -203,83 +259,7 @@ app.post('/connectwallet', async (req, res) => {
   }
 });
 
-// Check linked accounts endpoint
-app.get('/check-linked-accounts', web3Auth, async (req, res) => {
-  try {
-    const walletAddress = req.walletAddress;
-
-    const linkedAccounts = await AccountLog.find({ 
-      walletAddress,
-      walletAddress: { $not: { $regex: /^unclaimed_/ } }
-    });
-
-    if (linkedAccounts.length > 0) {
-      return res.json({
-        status: 'successful',
-        message: 'Linked accounts found',
-        data: linkedAccounts.map(log => ({
-          id: log._id,
-          monoAccountId: log.monoAccountId,
-          accountName: log.accountName,
-          details: {
-            institutionName: log.details.institutionName,
-            accountNumber: log.details.accountNumber,
-            accountName: log.details.accountName,
-            balance: log.details.balance
-          },
-          createdAt: log.createdAt
-        }))
-      });
-    }
-
-    const options = {
-      method: 'POST',
-      url: 'https://api.withmono.com/v2/accounts/initiate',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'mono-sec-key': process.env.MONO_SECRET_KEY,
-      },
-      data: {
-        customer: {
-          name: walletAddress,
-          email: `${walletAddress}@gmail.com`,
-        },
-        meta: { ref: '99008877TEST' },
-        scope: 'auth',
-        redirect_url: process.env.MONO_REDIRECT_URL,
-      },
-    };
-
-    const response = await axios.request(options);
-    const data = response.data;
-
-    if (data.status !== 'successful' || !data.data || !data.data.mono_url) {
-      throw new Error('Unexpected response format from Mono API');
-    }
-
-    res.json({
-      status: data.status,
-      message: 'No linked accounts found, initiating Mono linking',
-      data: {
-        mono_url: data.data.mono_url,
-        customer: data.data.customer,
-        meta: data.data.meta,
-        scope: data.data.scope,
-        redirect_url: data.data.redirect_url,
-        created_at: data.data.created_at,
-      },
-    });
-
-  } catch (error) {
-    console.error('Check linked accounts error:', error.response?.data || error.message);
-    res.status(500).json({
-      error: 'Failed to check linked accounts',
-      details: error.response?.data?.message || error.message,
-    });
-  }
-});
-
+// Register user
 app.post('/register', web3Auth, async (req, res) => {
   try {
     const { walletAddress } = req;
@@ -295,6 +275,7 @@ app.post('/register', web3Auth, async (req, res) => {
   }
 });
 
+// Approve tokens (kept for reference)
 app.post('/approve-tokens', web3Auth, async (req, res) => {
   try {
     const { tokenAddress } = req.body;
@@ -304,21 +285,92 @@ app.post('/approve-tokens', web3Auth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid token address' });
     }
 
+    const normalizedTokenAddress = tokenAddress.toLowerCase();
+    if (!popularTokens.includes(normalizedTokenAddress)) {
+      return res.status(400).json({ 
+        error: 'Unsupported token', 
+        message: 'The provided token address is not in the list of supported tokens',
+        supportedTokens: popularTokens
+      });
+    }
+
     const signer = provider.getSigner(walletAddress);
-    const tokenContract = new Contract(tokenAddress, tokenAbi, signer);
+    const tokenContract = new Contract(normalizedTokenAddress, tokenAbi, signer);
     const currentAllowance = await tokenContract.allowance(walletAddress, trustEscrowAddress);
 
     if (currentAllowance.lt(MAX_UINT256)) {
       const tx = await tokenContract.approve(trustEscrowAddress, MAX_UINT256);
       const receipt = await tx.wait();
-      return res.json({ success: true, txHash: receipt.transactionHash });
+      return res.json({ 
+        success: true, 
+        approvedToken: normalizedTokenAddress,
+        supportedTokens: popularTokens,
+        txHash: receipt.transactionHash,
+        allowance: MAX_UINT256,
+        message: 'Allowance approved successfully'
+      });
     }
-    res.json({ success: true, message: 'Tokens already approved' });
+    
+    res.json({ 
+      success: true, 
+      approvedToken: normalizedTokenAddress,
+      supportedTokens: popularTokens,
+      allowance: currentAllowance.toString(),
+      message: 'Allowance already sufficient' 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Token approval failed', details: error.message });
+    res.status(500).json({ 
+      error: 'Token allowance approval failed', 
+      details: error.message,
+      attemptedToken: tokenAddress,
+      supportedTokens: popularTokens
+    });
   }
 });
 
+// Check account details (updated with bankAccountLogs)
+app.get('/check-account-details', web3Auth, async (req, res) => {
+  try {
+    const { walletAddress } = req;
+
+    const bankAccountLogs = await BankAccountLog.find({ walletAddress });
+
+    if (bankAccountLogs.length === 0) {
+      return res.json({ success: false, message: 'No bank account IDs associated with this wallet address' });
+    }
+
+    const accountDetailsPromises = bankAccountLogs.map(async (log) => {
+      const options = {
+        method: 'GET',
+        url: `https://api.withmono.com/v2/accounts/${log.monoAccountId}`,
+        headers: { 
+          'accept': 'application/json',
+          'mono-sec-key': process.env.MONO_SECRET_KEY
+        }
+      };
+
+      const response = await axios.request(options);
+      return response.data;
+    });
+
+    const accountDetails = await Promise.all(accountDetailsPromises);
+
+    res.json({
+      success: true,
+      message: 'Bank account details retrieved successfully',
+      data: accountDetails
+    });
+  } catch (error) {
+    console.error('Error fetching bank account details:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch bank account details', 
+      details: error.message 
+    });
+  }
+});
+
+// Create escrow
 app.post('/create-escrow', web3Auth, async (req, res) => {
   try {
     const { payee, token, tokenAmount, fiatAmount } = req.body;
@@ -360,9 +412,25 @@ app.post('/create-escrow', web3Auth, async (req, res) => {
   }
 });
 
-app.post('/initiate-mono-account', web3Auth, async (req, res) => {
+// Check linked accounts
+app.get('/check-linked-accounts', web3Auth, async (req, res) => {
   try {
     const walletAddress = req.walletAddress;
+
+    const bankAccountLogs = await BankAccountLog.find({ walletAddress });
+
+    if (bankAccountLogs.length > 0) {
+      return res.json({
+        status: 'successful',
+        message: 'Linked bank accounts found',
+        data: bankAccountLogs.map(log => ({
+          id: log._id,
+          monoAccountId: log.monoAccountId,
+          walletAddress: log.walletAddress,
+          createdAt: log.createdAt
+        }))
+      });
+    }
 
     const options = {
       method: 'POST',
@@ -391,8 +459,10 @@ app.post('/initiate-mono-account', web3Auth, async (req, res) => {
     }
 
     res.json({
-      status: data.status,
-      message: data.message,
+      status: 'requires_linking',
+      message: bankAccountLogs.length > 0 
+        ? 'Add another bank account with Mono linking'
+        : 'No linked bank accounts found, please proceed with linking',
       data: {
         mono_url: data.data.mono_url,
         customer: data.data.customer,
@@ -403,24 +473,25 @@ app.post('/initiate-mono-account', web3Auth, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Mono API error:', error.response?.data || error.message);
+    console.error('Check linked accounts error:', error.response?.data || error.message);
     res.status(500).json({
-      error: 'Failed to initiate Mono account',
+      error: 'Failed to check linked accounts',
       details: error.response?.data?.message || error.message,
     });
   }
 });
 
+// Link Mono account (simplified to store only walletAddress and monoAccountId)
 app.post('/link-mono-account', web3Auth, async (req, res) => {
-  const { code } = req.body;
-  const walletAddress = req.walletAddress;
-
-  if (!code) {
-    return res.status(400).json({ error: 'Code is required' });
-  }
-
   try {
-    const response = await axios.post(
+    const { code } = req.body;
+    const walletAddress = req.walletAddress;
+
+    if (!code) {
+      return res.status(400).json({ error: 'Code is required' });
+    }
+
+    const authResponse = await axios.post(
       'https://api.withmono.com/v2/accounts/auth',
       { code },
       {
@@ -432,238 +503,54 @@ app.post('/link-mono-account', web3Auth, async (req, res) => {
       }
     );
 
-    const monoAccountId = response.data.id;
+    const monoAccountId = authResponse.data.id;
     if (!monoAccountId) {
       throw new Error('No account ID returned from Mono API');
     }
 
-    const user = await User.findOneAndUpdate(
-      { walletAddress },
-      { monoAccountId },
-      { new: true, upsert: true }
-    );
-
-    res.json({
-      status: 'successful',
-      message: 'Mono account linked successfully',
-      data: { monoAccountId: user.monoAccountId },
-    });
-  } catch (error) {
-    console.error('Mono auth error:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Failed to link Mono account',
-      details: error.response?.data?.message || error.message,
-    });
-  }
-});
-
-app.post('/webhook', verifyWebhook, async (req, res) => {
-  const webhook = req.body;
-
-  if (webhook.event !== 'mono.events.account_updated') {
-    return res.sendStatus(200);
-  }
-
-  try {
-    const { account } = webhook.data;
-    const monoAccountId = account._id;
-
-    const existingLog = await AccountLog.findOne({ monoAccountId });
-
-    if (existingLog && !existingLog.walletAddress.startsWith('unclaimed_')) {
-      return res.json({
-        status: 'successful',
-        message: 'Account already linked',
-        data: {
-          id: existingLog._id,
-          monoAccountId: existingLog.monoAccountId,
-          walletAddress: existingLog.walletAddress,
-          accountName: existingLog.accountName,
-          details: existingLog.details,
-          createdAt: existingLog.createdAt
-        }
+    const existingLog = await BankAccountLog.findOne({ monoAccountId });
+    if (existingLog && existingLog.walletAddress !== walletAddress && !existingLog.walletAddress.startsWith('unclaimed_')) {
+      return res.status(400).json({
+        error: 'Account already linked',
+        message: 'This bank account is already associated with another wallet address. If this is your account, please contact support.'
       });
     }
 
-    const accountDetails = await fetchMonoAccountDetails(monoAccountId);
+    const duplicateCheck = await BankAccountLog.findOne({ 
+      walletAddress, 
+      monoAccountId 
+    });
+    
+    if (duplicateCheck) {
+      return res.status(400).json({
+        error: 'Duplicate account',
+        message: 'This bank account is already linked to your wallet'
+      });
+    }
 
-    const logEntry = await AccountLog.findOneAndUpdate(
-      { monoAccountId },
-      {
-        $set: {
-          walletAddress: `unclaimed_${monoAccountId}`,
-          details: {
-            institutionName: accountDetails.institution.name,
-            accountNumber: accountDetails.accountNumber,
-            accountName: accountDetails.accountName,
-            balance: accountDetails.balance
-          }
-        }
-      },
-      { upsert: true, new: true }
-    );
+    const logEntry = await BankAccountLog.create({
+      walletAddress,
+      monoAccountId
+    });
 
-    console.log(`Created/Updated account log for Mono account ${monoAccountId}`);
     res.json({
       status: 'successful',
-      message: 'Account log created',
+      message: 'Bank account linked successfully',
       data: {
         id: logEntry._id,
         monoAccountId: logEntry.monoAccountId,
         walletAddress: logEntry.walletAddress,
-        accountName: logEntry.accountName,
-        details: logEntry.details,
         createdAt: logEntry.createdAt
       }
     });
-
   } catch (error) {
-    console.error('Webhook processing error:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to process webhook', 
-      details: error.message 
+    console.error('Mono linking error:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to link bank account',
+      details: error.response?.data?.message || error.message,
     });
   }
 });
-
-app.get('/account-logs', web3Auth, async (req, res) => {
-  try {
-    const { walletAddress } = req;
-
-    const logs = await AccountLog.find({
-      $or: [
-        { walletAddress },
-        { walletAddress: { $regex: /^unclaimed_/ } }
-      ]
-    }).sort({ createdAt: -1 });
-
-    res.json({
-      status: 'successful',
-      data: logs.map(log => ({
-        id: log._id,
-        monoAccountId: log.monoAccountId,
-        walletAddress: log.walletAddress,
-        accountName: log.accountName,
-        details: log.details,
-        createdAt: log.createdAt
-      }))
-    });
-  } catch (error) {
-    console.error('Account logs fetch error:', error.message);
-    res.status(500).json({
-      error: 'Failed to fetch account logs',
-      details: error.message
-    });
-  }
-});
-
-app.post('/claim-account-log', web3Auth, async (req, res) => {
-  try {
-    const { walletAddress } = req;
-    const { logId } = req.body;
-
-    if (!logId) {
-      return res.status(400).json({ error: 'Log ID is required' });
-    }
-
-    const log = await AccountLog.findById(logId);
-    
-    if (!log) {
-      return res.status(404).json({ error: 'Log not found' });
-    }
-
-    if (!log.walletAddress.startsWith('unclaimed_') && log.walletAddress !== walletAddress) {
-      return res.status(403).json({
-        status: 'error',
-        message: 'Account belongs to someone else, contact support'
-      });
-    }
-
-    const updatedLog = await AccountLog.findOneAndUpdate(
-      { _id: logId, walletAddress: { $regex: /^unclaimed_/ } },
-      { $set: { walletAddress } },
-      { new: true }
-    );
-
-    if (!updatedLog) {
-      return res.status(400).json({ 
-        error: 'Log already claimed or invalid state' 
-      });
-    }
-
-    res.json({
-      status: 'successful',
-      message: 'Account log claimed successfully',
-      data: {
-        id: updatedLog._id,
-        monoAccountId: updatedLog.monoAccountId,
-        walletAddress: updatedLog.walletAddress,
-        accountName: updatedLog.accountName,
-        details: updatedLog.details,
-        createdAt: updatedLog.createdAt
-      }
-    });
-  } catch (error) {
-    console.error('Account log claim error:', error.message);
-    res.status(500).json({
-      error: 'Failed to claim account log',
-      details: error.message
-    });
-  }
-});
-
-async function fetchMonoAccountDetails(monoAccountId) {
-  try {
-    const response = await axios.get(
-      `https://api.withmono.com/v1/accounts/${monoAccountId}`,
-      {
-        headers: {
-          'accept': 'application/json',
-          'mono-sec-key': process.env.MONO_SECRET_KEY,
-        },
-      }
-    );
-
-    const { data } = response;
-    if (!data || !data.account) {
-      throw new Error('Invalid Mono account response');
-    }
-
-    return {
-      institution: { name: data.account.institution?.name || 'Unknown' },
-      accountNumber: data.account.accountNumber,
-      accountName: data.account.accountName,
-      balance: data.account.balance
-    };
-  } catch (error) {
-    console.error('Mono API fetch error:', error.response?.data || error.message);
-    throw new Error(`Failed to fetch Mono account details: ${error.message}`);
-  }
-}
-
-async function notifyMismatch(monoAccountId) {
-  const webhookUrl = 'https://your-webhook-receiver.com/endpoint';
-  const payload = {
-    event: 'mono.account_id_mismatch',
-    data: {
-      monoAccountId,
-      message: 'No wallet address associated with this Mono account ID',
-      timestamp: new Date().toISOString(),
-    },
-  };
-
-  try {
-    await axios.post(webhookUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.WEBHOOK_AUTH_TOKEN}`,
-      },
-    });
-    console.log(`Webhook sent for unmatched account ID: ${monoAccountId}`);
-  } catch (webhookError) {
-    console.error('Webhook sending failed:', webhookError.message);
-  }
-}
 
 // Start server
 const PORT = process.env.PORT || 3000;
