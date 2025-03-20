@@ -6,7 +6,6 @@ const bcrypt = require("bcrypt");
 const axios = require("axios");
 const config = require("./config"); // Import configurations
 
-
 // Connect to MongoDB
 mongoose.connect(config.mongoUri, {
   useNewUrlParser: true,
@@ -26,7 +25,6 @@ app.post("/signup", async (req, res) => {
     });
   }
 
-  // Validate email domain (must end with @gmail.com, @yahoo.com, or @hotmail.com)
   const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
   if (!emailDomainRegex.test(email)) {
     return res.status(400).json({
@@ -35,7 +33,6 @@ app.post("/signup", async (req, res) => {
       message: "Email must end with @gmail.com, @yahoo.com, or @hotmail.com",
     });
   }
-
 
   if (!config.passwordRegex.test(password)) {
     return res.status(400).json({
@@ -57,6 +54,7 @@ app.post("/signup", async (req, res) => {
     const user = new User({
       email,
       password: hashedPassword,
+      monoAccountIds: [] // Initialize as empty array
     });
 
     await user.save();
@@ -65,10 +63,10 @@ app.post("/signup", async (req, res) => {
       message: "User created successfully",
       user: {
         email: user.email,
-        accountID: user.monoAccountId,
+        accountIDs: user.monoAccountIds,
       },
     });
-  } catch (_error) { // eslint-disable-line no-unused-vars
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: "An error occurred during signup",
@@ -86,15 +84,14 @@ app.post("/login", async (req, res) => {
     });
   }
 
-   // Validate email domain (must end with @gmail.com, @yahoo.com, or @hotmail.com)
-   const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
-   if (!emailDomainRegex.test(email)) {
-     return res.status(400).json({
-       success: false,
-       error: "Invalid email domain",
-       message: "Email must end with @gmail.com, @yahoo.com, or @hotmail.com",
-     });
-   }
+  const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
+  if (!emailDomainRegex.test(email)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid email domain",
+      message: "Email must end with @gmail.com, @yahoo.com, or @hotmail.com",
+    });
+  }
 
   try {
     const user = await User.findOne({ email });
@@ -118,10 +115,10 @@ app.post("/login", async (req, res) => {
       message: "Login successful",
       user: {
         email: user.email,
-        accountID: user.monoAccountId || "",
+        accountIDs: user.monoAccountIds || [],
       },
     });
-  } catch (_error) { // eslint-disable-line no-unused-vars
+  } catch (_error) {
     res.status(500).json({
       success: false,
       error: "An error occurred during login",
@@ -141,13 +138,13 @@ app.post('/check-linked-accounts', async (req, res) => {
       }
 
       const validEmailDomains = /\.(com)$/i;
-    const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
-    if (!emailDomainRegex.test(email) || !validEmailDomains.test(email)) {
-      return res.status(400).json({
-        error: 'Invalid email domain',
-        message: 'Email must end with @gmail.com, @yahoo.com, or @hotmail.com',
-      });
-    }
+      const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
+      if (!emailDomainRegex.test(email) || !validEmailDomains.test(email)) {
+        return res.status(400).json({
+          error: 'Invalid email domain',
+          message: 'Email must end with @gmail.com, @yahoo.com, or @hotmail.com',
+        });
+      }
   
       const options = {
         method: 'POST',
@@ -187,7 +184,7 @@ app.post('/check-linked-accounts', async (req, res) => {
           created_at: data.data.created_at,
         },
       });
-    } catch (_error) { // eslint-disable-line no-unused-vars
+    } catch (_error) {
       console.error('Check linked accounts error:', _error.response?.data || _error.message);
       res.status(500).json({
         status: 'error',
@@ -195,16 +192,22 @@ app.post('/check-linked-accounts', async (req, res) => {
         details: _error.response?.data?.message || _error.message,
       });
     }
-  });
+});
 
-  
 app.post('/link-mono-account', async (req, res) => {
   try {
-    const { code, email } = req.body;
+    const { code, email, signupEmail } = req.body;
 
-    if (!code || !email) {
+    if (!code || !email || !signupEmail) {
       return res.status(400).json({
-        error: 'Code and email are required',
+        error: 'Code, linking email, and signup email are required',
+      });
+    }
+
+    if (email !== signupEmail) {
+      return res.status(400).json({
+        error: 'Email mismatch',
+        message: 'The linking email must match the signup email',
       });
     }
 
@@ -213,6 +216,14 @@ app.post('/link-mono-account', async (req, res) => {
       return res.status(404).json({
         error: 'User not found',
         message: 'No user found with this email. Please sign up first.',
+      });
+    }
+
+    // Check if the user has reached the maximum number of linked accounts (3)
+    if (user.monoAccountIds && user.monoAccountIds.length >= 3) {
+      return res.status(400).json({
+        error: 'Account limit reached',
+        message: 'Maximum of 3 bank accounts can be linked to an email address',
       });
     }
 
@@ -233,9 +244,18 @@ app.post('/link-mono-account', async (req, res) => {
       throw new Error('No account ID returned from Mono API');
     }
 
+    // Check if this account ID is already linked
+    if (user.monoAccountIds && user.monoAccountIds.includes(monoAccountId)) {
+      return res.status(400).json({
+        error: 'Account already linked',
+        message: 'This bank account is already linked to your email',
+      });
+    }
+
+    // Add the new account ID to the array
     const updatedUser = await User.findOneAndUpdate(
       { email },
-      { $set: { monoAccountId: monoAccountId } },
+      { $push: { monoAccountIds: monoAccountId } },
       { new: true }
     );
 
@@ -244,11 +264,11 @@ app.post('/link-mono-account', async (req, res) => {
       message: 'Bank account linked successfully',
       data: {
         email: updatedUser.email,
-        monoAccountId: updatedUser.monoAccountId,
+        accountIDs: updatedUser.monoAccountIds,
         updatedAt: updatedUser.updatedAt,
       },
     });
-  } catch (_error) { // eslint-disable-line no-unused-vars
+  } catch (_error) {
     console.error('Mono linking error:', _error.response?.data || _error.message);
     res.status(_error.response?.status || 500).json({
       error: 'Failed to link bank account',
