@@ -1,7 +1,6 @@
 // Userschema.js
 const mongoose = require('mongoose');
 
-// User Schema
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -27,6 +26,12 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 50,
     },
+    refreshTokens: [{
+      token: { type: String, required: true },
+      expiresAt: { type: Date, required: true },
+      createdAt: { type: Date, default: Date.now },
+      isActive: { type: Boolean, default: true },
+    }],
     walletAddress: {
       type: String,
       required: false,
@@ -34,8 +39,7 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       lowercase: true,
       trim: true,
-      index: true,
-      default: "",
+      index: true, // No default value
     },
     bankAccountLogs: [{
       type: mongoose.Schema.Types.ObjectId,
@@ -55,7 +59,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Bank Account Log Schema
+// Bank Account Log Schema (unchanged)
 const bankAccountLogSchema = new mongoose.Schema({
   monoAccountId: {
     type: String,

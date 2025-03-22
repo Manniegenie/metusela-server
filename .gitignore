@@ -3,3 +3,7 @@ node_modules/
 wallet.js
 monolink.js
 .github/workflows
+.vscode
+connect.html
+test.js
+signup.html
