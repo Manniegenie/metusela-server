@@ -1,28 +1,27 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
-const { User } = require("./Userschema");
+const { User } = require('./Userschema');
 const bcrypt = require("bcrypt");
 const config = require("./config");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cors = require("cors");
 
-const app = express();
-app.use(express.json());
-app.use(helmet());
-app.use(cors())
+const router = express.Router();
+
+router.use(express.json());
+router.use(helmet());
+router.use(cors());
 
 const signupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { success: false, error: "Too many signup attempts from this IP, please try again after 15 minutes" },
 });
-app.use("/signup", signupLimiter);
+router.use(signupLimiter);
 
 mongoose.connect(config.mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
 }).then(() => console.log("Connected to MongoDB"))
   .catch(err => {
     console.error("MongoDB connection error:", err.message);
@@ -38,7 +37,8 @@ const generateTokens = (email) => {
   return { accessToken, refreshToken };
 };
 
-app.post("/signup", async (req, res) => {
+// POST /signup
+router.post("/", async (req, res) => {
   const { email, password, confirmPassword, username } = req.body;
 
   if (!email || !password || !confirmPassword) {
@@ -71,12 +71,11 @@ app.post("/signup", async (req, res) => {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, config.saltRounds || 10);
+    const hashedPassword = await bcrypt.hash(password, config.saltRounds);
     const user = new User({
       email,
       password: hashedPassword,
       username: username || undefined,
-      // Do NOT set walletAddress here; it should remain undefined
     });
 
     const { accessToken, refreshToken } = generateTokens(email);
@@ -111,5 +110,4 @@ app.post("/signup", async (req, res) => {
   }
 });
 
-const PORT = config.signupPort || 3000;
-app.listen(PORT, () => console.log(`Signup server running on port ${PORT}`));
+module.exports = router;
