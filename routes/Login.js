@@ -1,41 +1,34 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const jwt = require("jsonwebtoken");
-const { User } = require("./Userschema");
-const bcrypt = require("bcrypt");
-const config = require("./config");
-
-const app = express();
-app.use(express.json());
-
-mongoose.connect(config.mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => console.log('Connected to MongoDB')).catch(err => console.error('MongoDB error:', err));
+// routes/login.js
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const { User } = require('./Userschema'); // Adjust path if needed
+const config = require('../config'); // Adjust path if needed
+const router = express.Router();
 
 // Helper function to generate tokens
 const generateTokens = (email) => {
   const accessToken = jwt.sign(
     { email },
     config.jwtSecret,
-    { expiresIn: '15m' } // Short-lived access token (15 minutes)
+    { expiresIn: '15m' }
   );
   const refreshToken = jwt.sign(
     { email },
-    config.refreshTokenSecret, // Use a different secret for refresh tokens
-    { expiresIn: '7d' }  // Long-lived refresh token (7 days)
+    config.refreshTokenSecret,
+    { expiresIn: '7d' }
   );
   return { accessToken, refreshToken };
 };
 
-// login.js
-app.post("/login", async (req, res) => {
+// POST /login endpoint
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({
       success: false,
-      error: "Email and password are required",
+      error: 'Email and password are required',
     });
   }
 
@@ -43,8 +36,8 @@ app.post("/login", async (req, res) => {
   if (!emailDomainRegex.test(email)) {
     return res.status(400).json({
       success: false,
-      error: "Invalid email domain",
-      message: "Email must end with @gmail.com, @yahoo.com, or @hotmail.com",
+      error: 'Invalid email domain',
+      message: 'Email must end with @gmail.com, @yahoo.com, or @hotmail.com',
     });
   }
 
@@ -53,7 +46,7 @@ app.post("/login", async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: "User not found",
+        error: 'User not found',
       });
     }
 
@@ -61,7 +54,7 @@ app.post("/login", async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        error: "Incorrect password",
+        error: 'Incorrect password',
       });
     }
 
@@ -79,18 +72,18 @@ app.post("/login", async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Login successful",
+      message: 'Login successful',
       accessToken,
       refreshToken,
       user: { email: user.email },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      error: "An error occurred during login",
+      error: 'An error occurred during login',
     });
   }
 });
 
-app.listen(config.loginPort || 3001, () => console.log(`Login server running on port ${config.loginPort || 3001}`));
+module.exports = router;
