@@ -1,17 +1,26 @@
-// index.js
+// server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const config = require('./routes/config'); // Adjust path if needed
-const connectWalletRoutes = require('./routes/connect-wallet'); // From previous example
-const loginRoutes = require('./routes/login'); // New login module
-const signuproutes = require('./routes/sign-up');
+const config = require('./routes/config'); // Ensure this path is correct
+const connectWalletRoutes = require('./routes/connect-wallet');
+const loginRoutes = require('./routes/login');
+const signupRoutes = require('./routes/sign-up');
+const launderingCheckRoutes = require('./routes/launderingcheck');
 
 const app = express();
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allow all for testing; restrict to frontend URL later
+    credentials: true, // For cookies (e.g., refreshToken)
+}));
+
+// Add a root route for testing
+app.get('/', (req, res) => {
+    res.send('Server is running!');
+});
 
 // MongoDB connection
 mongoose.connect(config.mongoUri, {
@@ -19,15 +28,19 @@ mongoose.connect(config.mongoUri, {
     useUnifiedTopology: true,
 })
     .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB error:', err));
+    .catch(err => {
+        console.error('MongoDB error:', err.message);
+        process.exit(1); // Exit if DB fails to prevent hanging
+    });
 
 // Mount routes
 app.use('/connect-wallet', connectWalletRoutes);
 app.use('/login', loginRoutes);
-app.use('/signup', signuproutes);
+app.use('/signup', signupRoutes);
+app.use('/fraud', launderingCheckRoutes);
 
 // Start server
-const port = process.env.PORT || 3000; // Railway sets PORT
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
 });
