@@ -6,7 +6,6 @@ const config = require('./routes/config'); // Ensure this path is correct
 const connectWalletRoutes = require('./routes/connect-wallet');
 const loginRoutes = require('./routes/login');
 const signupRoutes = require('./routes/sign-up');
-const launderingCheckRoutes = require('./routes/launderingcheck');
 
 const app = express();
 
@@ -37,7 +36,6 @@ mongoose.connect(config.mongoUri, {
 app.use('/connect-wallet', connectWalletRoutes);
 app.use('/login', loginRoutes);
 app.use('/signup', signupRoutes);
-app.use('/fraud', launderingCheckRoutes);
 
 // Start server
 const PORT = process.env.PORT || 3000;
