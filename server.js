@@ -12,8 +12,8 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: '*', // Allow all for testing; restrict to frontend URL later
-    credentials: true, // For cookies (e.g., refreshToken)
+    origin: 'http://localhost:5500', // Match your frontend origin
+    credentials: true, // Allow cookies
 }));
 
 // Add a root route for testing
