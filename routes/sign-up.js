@@ -6,13 +6,11 @@ const bcrypt = require("bcrypt");
 const config = require("./config");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const cors = require("cors");
 
 const router = express.Router();
 
 router.use(express.json());
 router.use(helmet());
-router.use(cors());
 
 const signupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
