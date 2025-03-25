@@ -1,8 +1,7 @@
-// server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const config = require('./routes/config'); // Ensure this path is correct
+const config = require('./routes/config');
 const connectWalletRoutes = require('./routes/connect-wallet');
 const loginRoutes = require('./routes/login');
 const signupRoutes = require('./routes/sign-up');
@@ -12,27 +11,31 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors({
-    origin: 'http://localhost:5500', // Match your frontend origin
-    credentials: true, // Allow cookies
+    origin: 'http://localhost:5500', // Must match your frontend origin
+    credentials: true,
 }));
 
-// Add a root route for testing
-app.get('/', (req, res) => {
-    res.send('Server is running!');
-});
+// Root route
+app.get('/', (req, res) => res.send('Server is running!'));
 
 // MongoDB connection
+console.log('Mongo URI:', config.mongoUri);
+if (!config.mongoUri) {
+    console.error('MONGO_URI is undefined');
+    process.exit(1);
+}
 mongoose.connect(config.mongoUri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000,
 })
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => {
-        console.error('MongoDB error:', err.message);
-        process.exit(1); // Exit if DB fails to prevent hanging
+        console.error('MongoDB connection error:', err.message);
+        process.exit(1);
     });
 
-// Mount routes
+// Routes
 app.use('/connect-wallet', connectWalletRoutes);
 app.use('/login', loginRoutes);
 app.use('/signup', signupRoutes);
