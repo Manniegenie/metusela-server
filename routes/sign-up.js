@@ -67,11 +67,6 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ success: false, error: "Passwords do not match" });
   }
 
-  const emailDomainRegex = /@(gmail|yahoo|hotmail)\.com$/i;
-  if (!emailDomainRegex.test(email)) {
-    return res.status(400).json({ success: false, error: "Invalid email domain", message: "Email must end with @gmail.com, @yahoo.com, or @hotmail.com" });
-  }
-
   if (!PASSWORD_REGEX.test(password)) {
     return res.status(400).json({ success: false, error: "Invalid password", message: "Password must be 6-15 characters and contain at least one number and one special character" });
   }
