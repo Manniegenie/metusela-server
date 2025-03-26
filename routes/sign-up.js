@@ -1,5 +1,4 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const { User } = require('./Userschema');
 const bcrypt = require("bcrypt");
@@ -19,13 +18,6 @@ const signupLimiter = rateLimit({
 });
 router.use(signupLimiter);
 
-mongoose.connect(config.mongoUri, {
-}).then(() => console.log("Connected to MongoDB"))
-  .catch(err => {
-    console.error("MongoDB connection error:", err.message);
-    process.exit(1);
-  });
-
 const PASSWORD_REGEX = /^(?=.*[0-9])(?=.*[!@#$%^&*])[a-zA-Z0-9!@#$%^&*]{6,15}$/;
 
 const generateTokens = (email) => {
@@ -35,7 +27,35 @@ const generateTokens = (email) => {
   return { accessToken, refreshToken };
 };
 
-// POST /signup
+// Function to check email existence
+const checkEmailExists = async (email) => {
+  const existingEmail = await User.findOne({ email });
+  if (existingEmail) {
+    console.error(`Signup failed: Email '${email}' already exists`);
+    return true;
+  }
+  return false;
+};
+
+// Function to check username existence and suggest variations
+const checkUsernameExists = async (username) => {
+  if (!username) return { exists: false, suggestions: [] };
+
+  const existingUsername = await User.findOne({ username });
+  if (!existingUsername) return { exists: false, suggestions: [] };
+
+  console.error(`Signup failed: Username '${username}' already taken`);
+  
+  // Generate username suggestions
+  const suggestions = [];
+  const randomNum = Math.floor(Math.random() * 1000);
+  suggestions.push(`${username}${randomNum}`);
+  suggestions.push(`${username}_${randomNum}`);
+  suggestions.push(`${randomNum}${username}`);
+
+  return { exists: true, suggestions };
+};
+
 router.post("/", async (req, res) => {
   const { email, password, confirmPassword, username } = req.body;
 
@@ -61,11 +81,22 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const existingUser = await User.findOne({ $or: [{ email }, { username: username || null }] });
-    if (existingUser) {
+    // Check email existence
+    const emailExists = await checkEmailExists(email);
+    if (emailExists) {
       return res.status(409).json({
         success: false,
-        error: existingUser.email === email ? "Email already exists" : "Username already taken",
+        error: "Email already exists",
+      });
+    }
+
+    // Check username existence and get suggestions
+    const { exists: usernameExists, suggestions } = await checkUsernameExists(username);
+    if (usernameExists) {
+      return res.status(409).json({
+        success: false,
+        error: "Username already taken",
+        suggestions,
       });
     }
 
