@@ -9,7 +9,6 @@ const jwt = require("jsonwebtoken");
 const signUpRoutes = require("./routes/sign-up");
 const loginRoutes = require("./routes/login");
 const walletRoutes = require("./routes/connect-wallet");
-const escrowRoutes = require("./routes/escrow");
 const emailserviceRoutes = require("./routes/verify-email")
 const verifyRoutes = require("./routes/verify")
 const banklinkingRoutes = require("./routes/banklinking");
@@ -59,14 +58,13 @@ app.use("/verify", verifyRoutes)
 // **Protected Routes**
 app.use("/connect-wallet", authenticateToken, walletRoutes);
 app.use("/banklinking", authenticateToken, banklinkingRoutes);
-app.use("/escrow", authenticateToken, escrowRoutes);
 
 
 // **Root Route**
 app.get("/", (req, res) => res.send("🚀 OnePage API Running"));
 
-// **Global Error Handler**
-app.use((err, req, res,) => {
+// **Global Error Handler** - Fix this:
+app.use((err, req, res, next) => {  // Added 'next' parameter
     console.error("Unhandled error:", err.stack);
     res.status(500).json({ success: false, error: "Internal Server Error" });
 });
