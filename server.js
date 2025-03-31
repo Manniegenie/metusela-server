@@ -10,7 +10,8 @@ const signUpRoutes = require("./routes/sign-up");
 const loginRoutes = require("./routes/login");
 const walletRoutes = require("./routes/connect-wallet");
 const escrowRoutes = require("./routes/escrow");
-
+const emailserviceRoutes = require("./routes/verify-email")
+const verifyRoutes = require("./routes/verify")
 const banklinkingRoutes = require("./routes/banklinking");
 
 const app = express();
@@ -51,6 +52,9 @@ const authenticateToken = (req, res, next) => {
 // **Public Routes**
 app.use("/sign-up", signUpRoutes);
 app.use("/login", loginRoutes);
+app.use("/verify-email", emailserviceRoutes)
+app.use("/verify", verifyRoutes)
+
 
 // **Protected Routes**
 app.use("/connect-wallet", authenticateToken, walletRoutes);
