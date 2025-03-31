@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 
 // User Schema
 const userSchema = new mongoose.Schema(
@@ -49,6 +50,11 @@ const userSchema = new mongoose.Schema(
         message: 'Maximum of 3 bank accounts allowed per user',
       },
     }],
+    // New subdocument for authentication nonce
+    authNonce: {
+      nonce: { type: String },
+      expiresAt: { type: Date },
+    },
   },
   {
     timestamps: true,
@@ -127,9 +133,21 @@ bankAccountLogSchema.virtual('formattedBalance').get(function () {
   return (this.balance / 100).toFixed(2);
 });
 
-// Export all models
+// Pre-save hook for password hashing
+userSchema.pre("save", async function (next) {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+  next();
+});
+
+// Export all models using caching to prevent overwrite errors
+const User = mongoose.models.User || mongoose.model('User', userSchema);
+const PendingUser = mongoose.models.PendingUser || mongoose.model('PendingUser', pendingUserSchema);
+const BankAccountLog = mongoose.models.BankAccountLog || mongoose.model('BankAccountLog', bankAccountLogSchema);
+
 module.exports = {
-  User: mongoose.model('User', userSchema),
-  BankAccountLog: mongoose.model('BankAccountLog', bankAccountLogSchema),
-  PendingUser: mongoose.model('PendingUser', pendingUserSchema),
+  User,
+  PendingUser,
+  BankAccountLog,
 };
