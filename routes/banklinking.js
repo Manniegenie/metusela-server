@@ -1,7 +1,7 @@
 // banklinking.js
 const express = require('express');
 const axios = require('axios');
-const { BankAccountLog } = require('../Userschema'); // Import only BankAccountLog
+const { BankAccountLog } = require('./Userschema'); // Import only BankAccountLog
 const config = require('./config');
 
 const app = express();
