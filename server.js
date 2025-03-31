@@ -9,9 +9,9 @@ const jwt = require("jsonwebtoken");
 const signUpRoutes = require("./routes/sign-up");
 const loginRoutes = require("./routes/login");
 const walletRoutes = require("./routes/connect-wallet");
-const liquidityRoutes = require("./routes/escrow");
-const domainRoutes = require("./routes/auth.js");
-const verifyEmailRoutes = require("./routes/banklinking");
+const escrowRoutes = require("./routes/escrow");
+
+const banklinkingRoutes = require("./routes/banklinking");
 
 const app = express();
 
@@ -51,12 +51,12 @@ const authenticateToken = (req, res, next) => {
 // **Public Routes**
 app.use("/sign-up", signUpRoutes);
 app.use("/login", loginRoutes);
-app.use("/verify-email", verifyEmailRoutes);
 
 // **Protected Routes**
 app.use("/connect-wallet", authenticateToken, walletRoutes);
-app.use("/liquidity", authenticateToken, liquidityRoutes);
-app.use("/domain", authenticateToken, domainRoutes);
+app.use("/banklinking", authenticateToken, banklinkingRoutes);
+app.use("/escrow", authenticateToken, escrowRoutes);
+
 
 // **Root Route**
 app.get("/", (req, res) => res.send("🚀 OnePage API Running"));
