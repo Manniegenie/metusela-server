@@ -1,6 +1,6 @@
 const express = require("express");
 const { User, PendingUser } = require("./Userschema");
-const { sendVerificationEmail, generateVerificationCode } = require("./emailservice");
+const { sendVerificationEmail, generateVerificationCode } = require("./verify-email");
 const bcrypt = require("bcrypt");
 
 const router = express.Router();
