@@ -1,136 +1,51 @@
 const express = require("express");
-const jwt = require("jsonwebtoken");
-const { User } = require('./Userschema');
+const { User, PendingUser } = require("./Userschema");
+const { sendVerificationEmail, generateVerificationCode } = require("./emailservice");
 const bcrypt = require("bcrypt");
-const config = require("./config");
-const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
 
 const router = express.Router();
 
-router.use(express.json());
-router.use(helmet());
+const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validateUsername = (username) => /^[a-zA-Z0-9]{3,20}$/.test(username);
+const validatePassword = (password) => password.length >= 8;
 
-const signupLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { success: false, error: "Too many signup attempts from this IP, please try again after 15 minutes" },
-});
-router.use(signupLimiter);
-
-const PASSWORD_REGEX = /^(?=.*[0-9])(?=.*[!@#$%^&*])[a-zA-Z0-9!@#$%^&*]{6,15}$/;
-
-const generateTokens = (email) => {
-  if (!config.jwtSecret || !config.refreshTokenSecret) throw new Error("JWT secrets not configured");
-  const accessToken = jwt.sign({ email, type: "access" }, config.jwtSecret, { expiresIn: "15m" });
-  const refreshToken = jwt.sign({ email, type: "refresh" }, config.refreshTokenSecret, { expiresIn: "7d" });
-  return { accessToken, refreshToken };
-};
-
-// Function to check email existence
-const checkEmailExists = async (email) => {
-  const existingEmail = await User.findOne({ email });
-  if (existingEmail) {
-    console.error(`Signup failed: Email '${email}' already exists`);
-    return true;
-  }
-  return false;
-};
-
-// Function to check username existence and suggest variations
-const checkUsernameExists = async (username) => {
-  if (!username) return { exists: false, suggestions: [] };
-
-  const existingUsername = await User.findOne({ username });
-  if (!existingUsername) return { exists: false, suggestions: [] };
-
-  console.error(`Signup failed: Username '${username}' already taken`);
-  
-  // Generate username suggestions
-  const suggestions = [];
-  const randomNum = Math.floor(Math.random() * 1000);
-  suggestions.push(`${username}${randomNum}`);
-  suggestions.push(`${username}_${randomNum}`);
-  suggestions.push(`${randomNum}${username}`);
-
-  return { exists: true, suggestions };
-};
-
+// POST /sign-up - Register New User (Pending)
 router.post("/", async (req, res) => {
-  const { email, password, confirmPassword, username } = req.body;
+  const { email, username, password } = req.body;
 
-  if (!email || !password || !confirmPassword) {
-    return res.status(400).json({ success: false, error: "Email, password, and password confirmation are required" });
+  if (!email || !username || !password) {
+    return res.status(400).json({ success: false, error: "All fields required" });
   }
-
-  if (password !== confirmPassword) {
-    return res.status(400).json({ success: false, error: "Passwords do not match" });
-  }
-
-  if (!PASSWORD_REGEX.test(password)) {
-    return res.status(400).json({ success: false, error: "Invalid password", message: "Password must be 6-15 characters and contain at least one number and one special character" });
-  }
-
-  if (username && (username.length < 3 || username.length > 50)) {
-    return res.status(400).json({ success: false, error: "Username must be between 3 and 50 characters" });
+  if (!validateEmail(email) || !validateUsername(username) || !validatePassword(password)) {
+    return res.status(400).json({ success: false, error: "Invalid input format" });
   }
 
   try {
-    // Check email existence
-    const emailExists = await checkEmailExists(email);
-    if (emailExists) {
-      return res.status(409).json({
-        success: false,
-        error: "Email already exists",
-      });
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: "Email already in use" });
     }
 
-    // Check username existence and get suggestions
-    const { exists: usernameExists, suggestions } = await checkUsernameExists(username);
-    if (usernameExists) {
-      return res.status(409).json({
-        success: false,
-        error: "Username already taken",
-        suggestions,
-      });
-    }
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationCode = generateVerificationCode();
 
-    const hashedPassword = await bcrypt.hash(password, config.saltRounds);
-    const user = new User({
+    // Save pending user with expiration of 10 minutes
+    await PendingUser.create({
       email,
+      username,
       password: hashedPassword,
-      username: username || undefined,
+      verificationCode,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     });
 
-    const { accessToken, refreshToken } = generateTokens(email);
-    const refreshTokenExpiry = new Date();
-    refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7);
+    // Send verification email
+    await sendVerificationEmail(email, verificationCode);
 
-    user.refreshTokens.push({
-      token: refreshToken,
-      expiresAt: refreshTokenExpiry,
-      createdAt: new Date(),
-      isActive: true,
-    });
-
-    await user.save();
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "User created successfully",
-      accessToken,
-      user: { email: user.email, username: user.username, createdAt: user.createdAt },
-    });
+    res.status(201).json({ success: true, message: "Verification email sent. Please check your inbox." });
   } catch (error) {
-    console.error("Signup error:", error.stack);
-    res.status(500).json({ success: false, error: "An error occurred during signup", details: error.message });
+    console.error("Registration error:", error);
+    res.status(500).json({ success: false, error: "Registration failed" });
   }
 });
 

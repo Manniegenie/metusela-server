@@ -1,4 +1,3 @@
-// Userschema.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
@@ -29,8 +28,6 @@ const userSchema = new mongoose.Schema(
     refreshTokens: [{
       token: { type: String, required: true },
       expiresAt: { type: Date, required: true },
-      createdAt: { type: Date, default: Date.now },
-      isActive: { type: Boolean, default: true },
     }],
     walletAddress: {
       type: String,
@@ -39,7 +36,7 @@ const userSchema = new mongoose.Schema(
       sparse: true,
       lowercase: true,
       trim: true,
-      index: true, // No default value
+      index: true,
     },
     bankAccountLogs: [{
       type: mongoose.Schema.Types.ObjectId,
