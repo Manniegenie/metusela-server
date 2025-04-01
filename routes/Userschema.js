@@ -18,6 +18,14 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // Country code expected e.g., "NG", "US"
+    country: {
+      type: String,
+      required: false, // Set to true if mandatory
+      trim: true,
+      uppercase: true,
+      match: [/^[A-Z]{2}$/, 'Please provide a valid ISO country code'],
+    },
     username: {
       type: String,
       required: false,
@@ -26,6 +34,13 @@ const userSchema = new mongoose.Schema(
       trim: true,
       minlength: 3,
       maxlength: 50,
+    },
+    googleId: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+      index: true, // Already indexing here
     },
     refreshTokens: [{
       token: { type: String, required: true },
@@ -50,11 +65,25 @@ const userSchema = new mongoose.Schema(
         message: 'Maximum of 3 bank accounts allowed per user',
       },
     }],
-    // New subdocument for authentication nonce
+    // Authentication nonce for wallet authentication
     authNonce: {
       nonce: { type: String },
       expiresAt: { type: Date },
     },
+    profile: {
+      firstName: { type: String, trim: true },
+      lastName: { type: String, trim: true },
+      avatar: { type: String },
+      bio: { type: String, maxlength: 500 },
+    },
+    accountStatus: {
+      type: String,
+      enum: ['pending', 'active', 'suspended', 'deactivated'],
+      default: 'active'
+    },
+    lastLogin: {
+      type: Date
+    }
   },
   {
     timestamps: true,
@@ -63,8 +92,35 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Add index for refreshTokens.token for faster lookups
+// Indexes
 userSchema.index({ 'refreshTokens.token': 1 });
+// Removed duplicate index on googleId since it's declared in the field.
+
+// Method to compare password
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Method to clean user data for client response
+userSchema.methods.toClientJSON = function() {
+  return {
+    id: this._id,
+    email: this.email,
+    username: this.username,
+    walletAddress: this.walletAddress,
+    profile: this.profile,
+    createdAt: this.createdAt,
+    hasGoogleAuth: !!this.googleId
+  };
+};
+
+// Pre-save hook for password hashing
+userSchema.pre("save", async function (next) {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+  next();
+});
 
 // Pending User Schema
 const pendingUserSchema = new mongoose.Schema(
@@ -73,6 +129,13 @@ const pendingUserSchema = new mongoose.Schema(
     username: { type: String, required: true, trim: true },
     password: { type: String, required: true, trim: true },
     verificationCode: { type: String, required: true },
+    country: { 
+      type: String, 
+      required: false, 
+      trim: true, 
+      uppercase: true, 
+      match: [/^[A-Z]{2}$/, 'Please provide a valid ISO country code'] 
+    },
     expiresAt: { type: Date, required: true },
   },
   {
@@ -133,15 +196,7 @@ bankAccountLogSchema.virtual('formattedBalance').get(function () {
   return (this.balance / 100).toFixed(2);
 });
 
-// Pre-save hook for password hashing
-userSchema.pre("save", async function (next) {
-  if (this.isModified("password")) {
-    this.password = await bcrypt.hash(this.password, 10);
-  }
-  next();
-});
-
-// Export all models using caching to prevent overwrite errors
+// Export models
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const PendingUser = mongoose.models.PendingUser || mongoose.model('PendingUser', pendingUserSchema);
 const BankAccountLog = mongoose.models.BankAccountLog || mongoose.model('BankAccountLog', bankAccountLogSchema);

@@ -10,4 +10,9 @@ module.exports = {
   port: process.env.PORT || 3000,
   jwtSecret: process.env.JWT_SECRET, // Must be defined
   refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET,
+  // Mailgun settings:
+  mailgunApiKey: process.env.MAILGUN_API_KEY,
+  mailgunDomain: process.env.MAILGUN_DOMAIN,
+  
+  // You can add more config items as needed5
 };

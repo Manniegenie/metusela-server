@@ -11,10 +11,13 @@ const validatePassword = (password) => password.length >= 8;
 
 // POST /sign-up - Register New User (Pending)
 router.post("/", async (req, res) => {
-  const { email, username, password } = req.body;
+  const { email, confirmEmail, username, password, country } = req.body;
 
-  if (!email || !username || !password) {
+  if (!email || !confirmEmail || !username || !password || !country) {
     return res.status(400).json({ success: false, error: "All fields required" });
+  }
+  if (email !== confirmEmail) {
+    return res.status(400).json({ success: false, error: "Emails do not match" });
   }
   if (!validateEmail(email) || !validateUsername(username) || !validatePassword(password)) {
     return res.status(400).json({ success: false, error: "Invalid input format" });
@@ -26,20 +29,18 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ success: false, error: "Email already in use" });
     }
 
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
     const verificationCode = generateVerificationCode();
 
-    // Save pending user with expiration of 10 minutes
     await PendingUser.create({
       email,
       username,
       password: hashedPassword,
       verificationCode,
+      country,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     });
 
-    // Send verification email
     await sendVerificationEmail(email, verificationCode);
 
     res.status(201).json({ success: true, message: "Verification email sent. Please check your inbox." });
