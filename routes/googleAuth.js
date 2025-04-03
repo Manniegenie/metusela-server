@@ -2,7 +2,6 @@ const express = require('express');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { User } = require('./Userschema');
 const config = require('./config');
 
@@ -21,22 +20,9 @@ passport.use(new GoogleStrategy(
       let user = await User.findOne({ email });
 
       if (!user) {
-        // Create a new user if one doesn't exist.
-        // Generate a secure random password for OAuth users.
-        const randomPassword = crypto.randomBytes(24).toString('hex');
-        // Create a sanitized username from displayName or fallback to the email prefix.
-        const baseUsername = profile.displayName 
-          ? profile.displayName.replace(/\s+/g, '').toLowerCase() 
-          : email.split('@')[0];
-        const username = baseUsername + Math.floor(Math.random() * 1000);
-
-        user = await User.create({
-          email,
-          username,
-          password: randomPassword, // Will be hashed by pre-save hook
-          googleId: profile.id,
-          refreshTokens: []
-        });
+        // If user not found, don't create a new user.
+        // Signal failure so that the failureRedirect in the callback is triggered.
+        return done(null, false, { message: 'User not registered, please sign up.' });
       } else if (!user.googleId) {
         // Link Google account if user exists but hasn't been linked.
         user.googleId = profile.id;
@@ -71,7 +57,7 @@ router.get('/', passport.authenticate('google', { scope: ['profile', 'email'] })
 
 // Google OAuth callback route
 router.get('/callback', 
-  passport.authenticate('google', { session: false, failureRedirect: '/login' }),
+  passport.authenticate('google', { session: false, failureRedirect: `${config.frontendUrl}/signup` }),
   async (req, res) => {
     try {
       const tokens = generateTokens(req.user);

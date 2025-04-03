@@ -14,5 +14,6 @@ module.exports = {
   mailgunApiKey: process.env.MAILGUN_API_KEY,
   mailgunDomain: process.env.MAILGUN_DOMAIN,
   
-  // You can add more config items as needed5
+  // Frontend URL configuration:
+  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
 };
