@@ -13,6 +13,10 @@ module.exports = {
   // Mailgun settings:
   mailgunApiKey: process.env.MAILGUN_API_KEY,
   mailgunDomain: process.env.MAILGUN_DOMAIN,
+  googleClientId: process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  googleCallbackURL: process.env.GOOGLE_CALLBACK_URL,
+  
   
   // Frontend URL configuration:
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",

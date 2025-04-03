@@ -16,6 +16,8 @@ const emailserviceRoutes = require("./routes/verify-email");
 const verifyRoutes = require("./routes/verify");
 const banklinkingRoutes = require("./routes/banklinking");
 const googleAuthRoutes = require("./routes/googleAuth");
+const refreshRoutes = require("./routes/refresh");
+
 
 const app = express();
 
@@ -64,6 +66,7 @@ app.use("/login", loginRoutes);
 app.use("/verify-email", emailserviceRoutes);
 app.use("/verify", verifyRoutes);
 app.use("/auth/google", googleAuthRoutes);
+app.use("/refreshtoken", refreshRoutes);
 
 // ----- Protected Routes -----
 app.use("/connect-wallet", authenticateToken, walletRoutes);
