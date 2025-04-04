@@ -6,14 +6,6 @@ const config = require('./config');
 const router = express.Router();
 router.use(express.json());
 
-// Verify Webhook Middleware
-function verifyWebhook(req, res, next) {
-  const webhookSecret = req.headers['mono-webhook-secret'];
-  if (!webhookSecret || webhookSecret !== config.monoWebhookSecret) {
-    return res.status(401).json({ error: 'Invalid or missing webhook secret' });
-  }
-  next();
-}
 
 router.post('/initiate', async (req, res) => {
   try {
