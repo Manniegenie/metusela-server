@@ -1,13 +1,10 @@
-// banklinking.js
 const express = require('express');
 const axios = require('axios');
-const { BankAccountLog } = require('./Userschema'); // Import only BankAccountLog
+const { BankAccountLog, User } = require('./Userschema');
 const config = require('./config');
 
-const app = express();
-
-// Middleware
-app.use(express.json());
+const router = express.Router();
+router.use(express.json());
 
 // Verify Webhook Middleware
 function verifyWebhook(req, res, next) {
@@ -18,243 +15,115 @@ function verifyWebhook(req, res, next) {
   next();
 }
 
-// Webhook Endpoint
-app.post('/webhook', verifyWebhook, async (req, res) => {
-  const webhook = req.body;
-
-  if (webhook.event !== 'mono.events.account_updated') {
-    return res.sendStatus(200);
-  }
-
+router.post('/initiate', async (req, res) => {
   try {
-    const { account } = webhook.data;
-    const monoAccountId = account._id;
-
-    const existingLog = await BankAccountLog.findOne({ monoAccountId });
-
-    if (existingLog && !existingLog.walletAddress.startsWith('unclaimed_')) {
-      return res.json({
-        status: 'successful',
-        message: 'Account already linked',
-        data: {
-          id: existingLog._id,
-          monoAccountId: existingLog.monoAccountId,
-          walletAddress: existingLog.walletAddress,
-          createdAt: existingLog.createdAt,
-        },
-      });
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required.' });
     }
-
-    const logEntry = await BankAccountLog.findOneAndUpdate(
-      { monoAccountId },
-      {
-        $set: {
-          walletAddress: existingLog?.walletAddress || `unclaimed_${monoAccountId}`,
-        },
-      },
-      { upsert: true, new: true }
-    );
-
-    console.log(`Processed webhook for Mono account ${monoAccountId}`);
-    res.json({
-      status: 'successful',
-      message: 'Bank account log updated from webhook',
-      data: {
-        id: logEntry._id,
-        monoAccountId: logEntry.monoAccountId,
-        walletAddress: logEntry.walletAddress,
-        createdAt: logEntry.createdAt,
-      },
-    });
-  } catch (error) {
-    console.error('Webhook processing error:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to process webhook', 
-      details: error.message,
-    });
-  }
-});
-
-// Check Account Details
-app.get('/check-account-details', async (req, res) => {
-  try {
-    const { walletAddress } = req;
-
-    const bankAccountLogs = await BankAccountLog.find({ walletAddress });
-
-    if (bankAccountLogs.length === 0) {
-      return res.json({ success: false, message: 'No bank account IDs associated with this wallet address' });
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
     }
-
-    const accountDetailsPromises = bankAccountLogs.map(async (log) => {
-      const options = {
-        method: 'GET',
-        url: `https://api.withmono.com/v2/accounts/${log.monoAccountId}`,
-        headers: { 
-          'accept': 'application/json',
-          'mono-sec-key': config.monoSecretKey,
-        },
-      };
-
-      const response = await axios.request(options);
-      return response.data;
-    });
-
-    const accountDetails = await Promise.all(accountDetailsPromises);
-
-    res.json({
-      success: true,
-      message: 'Bank account details retrieved successfully',
-      data: accountDetails,
-    });
-  } catch (error) {
-    console.error('Error fetching bank account details:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch bank account details', 
-      details: error.message,
-    });
-  }
-});
-
-// Check Linked Accounts
-app.get('/check-linked-accounts', async (req, res) => {
-  try {
-    const walletAddress = req.walletAddress;
-
-    const bankAccountLogs = await BankAccountLog.find({ walletAddress });
-
-    if (bankAccountLogs.length > 0) {
-      return res.json({
-        status: 'successful',
-        message: 'Linked bank accounts found',
-        data: bankAccountLogs.map(log => ({
-          id: log._id,
-          monoAccountId: log.monoAccountId,
-          walletAddress: log.walletAddress,
-          createdAt: log.createdAt,
-        })),
-      });
-    }
-
     const options = {
       method: 'POST',
       url: 'https://api.withmono.com/v2/accounts/initiate',
       headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'mono-sec-key': config.monoSecretKey,
+        accept: 'application/json',
+        'Content-Type': 'application/json',
+        'mono-sec-key': config.monoSecKey,
       },
       data: {
         customer: {
-          name: walletAddress,
-          email: `${walletAddress}@gmail.com`,
+          name: user.username,
+          email: user.email,
         },
         meta: { ref: '99008877TEST' },
         scope: 'auth',
-        redirect_url: config.monoRedirectUrl,
+        redirect_url: 'https://mono.co',
       },
     };
-
     const response = await axios.request(options);
-    const data = response.data;
-
-    if (data.status !== 'successful' || !data.data || !data.data.mono_url) {
-      throw new Error('Unexpected response format from Mono API');
-    }
-
-    res.json({
-      status: 'requires_linking',
-      message: bankAccountLogs.length > 0 
-        ? 'Add another bank account with Mono linking'
-        : 'No linked bank accounts found, please proceed with linking',
-      data: {
-        mono_url: data.data.mono_url,
-        customer: data.data.customer,
-        meta: data.data.meta,
-        scope: data.data.scope,
-        redirect_url: data.data.redirect_url,
-        created_at: data.data.created_at,
-      },
-    });
-  } catch (error) {
-    console.error('Check linked accounts error:', error.response?.data || error.message);
-    res.status(500).json({
-      error: 'Failed to check linked accounts',
-      details: error.response?.data?.message || error.message,
-    });
-  }
-});
-
-// Link Mono Account
-app.post('/link-mono-account', async (req, res) => {
-  try {
-    const { code } = req.body;
-    const walletAddress = req.walletAddress;
-
-    if (!code) {
-      return res.status(400).json({ error: 'Code is required' });
-    }
-
-    const authResponse = await axios.post(
-      'https://api.withmono.com/v2/accounts/auth',
-      { code },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'accept': 'application/json',
-          'mono-sec-key': config.monoSecretKey,
-        },
-      }
-    );
-
-    const monoAccountId = authResponse.data.id;
-    if (!monoAccountId) {
-      throw new Error('No account ID returned from Mono API');
-    }
-
-    const existingLog = await BankAccountLog.findOne({ monoAccountId });
-    if (existingLog && existingLog.walletAddress !== walletAddress && !existingLog.walletAddress.startsWith('unclaimed_')) {
-      return res.status(400).json({
-        error: 'Account already linked',
-        message: 'This bank account is already associated with another wallet address. If this is your account, please contact support.',
-      });
-    }
-
-    const duplicateCheck = await BankAccountLog.findOne({ 
-      walletAddress, 
-      monoAccountId,
-    });
-    
-    if (duplicateCheck) {
-      return res.status(400).json({
-        error: 'Duplicate account',
-        message: 'This bank account is already linked to your wallet',
-      });
-    }
-
-    const logEntry = await BankAccountLog.create({
-      walletAddress,
-      monoAccountId,
-    });
-
-    res.json({
+    const monoResponse = response.data;
+    const monoData = monoResponse.data;
+    return res.status(200).json({
       status: 'successful',
-      message: 'Bank account linked successfully',
+      message: 'Request was successfully completed',
+      timestamp: new Date().toISOString(),
       data: {
-        id: logEntry._id,
-        monoAccountId: logEntry.monoAccountId,
-        walletAddress: logEntry.walletAddress,
-        createdAt: logEntry.createdAt,
+        mono_url: monoData.mono_url,
+        customer: monoData.customer,
+        meta: monoData.meta,
+        scope: monoData.scope,
+        redirect_url: monoData.redirect_url,
+        created_at: monoData.created_at,
       },
     });
   } catch (error) {
-    console.error('Mono linking error:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Failed to link bank account',
-      details: error.response?.data?.message || error.message,
+    console.error('Error in /initiate endpoint:', error.message);
+    return res.status(500).json({
+      error: 'Failed to process Mono account initiation',
+      details: error.message,
     });
   }
 });
 
-module.exports = app;
+router.post('/authenticate', async (req, res) => {
+  try {
+    const { userId, code } = req.body;
+    if (!userId || !code) {
+      return res.status(400).json({ error: 'User ID and code are required.' });
+    }
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    const options = {
+      method: 'POST',
+      url: 'https://api.withmono.com/v2/accounts/auth',
+      headers: {
+        accept: 'application/json',
+        'Content-Type': 'application/json',
+        'mono-sec-key': config.monoSecKey,
+      },
+      data: { code },
+    };
+    const response = await axios.request(options);
+    const monoResponse = response.data;
+    const monoData = monoResponse.data;
+    const existingAccount = await BankAccountLog.findOne({ monoAccountId: monoData.customer });
+    if (existingAccount) {
+      return res.status(400).json({ error: 'Account already exists.' });
+    }
+    const newLog = await BankAccountLog.create({
+      monoAccountId: monoData.customer,
+      walletAddress: monoData.mono_url,
+      userId: user._id,
+    });
+    if (!user.bankAccountLogs.includes(newLog._id)) {
+      user.bankAccountLogs.push(newLog._id);
+      await user.save();
+    }
+    return res.status(200).json({
+      status: 'successful',
+      message: 'Request was successfully completed',
+      timestamp: new Date().toISOString(),
+      data: {
+        mono_url: monoData.mono_url,
+        customer: monoData.customer,
+        meta: monoData.meta,
+        scope: monoData.scope,
+        redirect_url: monoData.redirect_url,
+        created_at: monoData.created_at,
+      },
+    });
+  } catch (error) {
+    console.error('Error in /authenticate endpoint:', error.message);
+    return res.status(500).json({
+      error: 'Failed to process Mono account authentication',
+      details: error.message,
+    });
+  }
+});
+
+module.exports = router;
