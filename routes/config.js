@@ -16,6 +16,8 @@ module.exports = {
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
   googleCallbackURL: process.env.GOOGLE_CALLBACK_URL,
+  usdtpriceapi: process.env.USDT_PRICE_API_KEY,
+
   
   
   // Frontend URL configuration:

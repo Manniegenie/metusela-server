@@ -19,7 +19,7 @@ async function updateBitcoinPrice() {
 async function updateNairaPrice() {
   try {
     const { data } = await axios.get('https://api.monierate.com/core/rates/latest.json?base=USDT&market=mid', {
-      headers: { Authorization: `API_KEY: ${config.API_KEY}` }
+      headers: { Authorization: `API_KEY: ${config.usdtpriceapi}` }
     });
     nairaPrice = data.price;
     console.log(new Date(), 'Updated Naira price:', nairaPrice);
