@@ -40,7 +40,7 @@ const userSchema = new mongoose.Schema(
       required: false,
       unique: true,
       sparse: true,
-      index: true, // Already indexing here
+      index: true,
     },
     refreshTokens: [{
       token: { type: String, required: true },
@@ -94,7 +94,6 @@ const userSchema = new mongoose.Schema(
 
 // Indexes
 userSchema.index({ 'refreshTokens.token': 1 });
-// Removed duplicate index on googleId since it's declared in the field.
 
 // Method to compare password
 userSchema.methods.comparePassword = async function(candidatePassword) {
@@ -122,13 +121,14 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// Pending User Schema
+// Pending User Schema - updated for JWT verification
 const pendingUserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, trim: true },
     username: { type: String, required: true, trim: true },
     password: { type: String, required: true, trim: true },
-    verificationCode: { type: String, required: true },
+    // Changed from verificationCode to verificationToken to store the JWT.
+    verificationToken: { type: String, required: true },
     country: { 
       type: String, 
       required: false, 

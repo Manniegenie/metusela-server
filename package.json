@@ -23,6 +23,7 @@
     "luxon": "^3.6.1",
     "mongodb": "^5.9.2",
     "mongoose": "^8.12.1",
+    "node-mailjet": "^6.0.8",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0"
   },

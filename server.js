@@ -13,7 +13,6 @@ const loginRoutes = require("./routes/login");
 const greetingRoutes = require("./routes/dashboard"); // Greeting endpoint
 const walletRoutes = require("./routes/connect-wallet");
 const emailserviceRoutes = require("./routes/verify-email");
-const verifyRoutes = require("./routes/verify");
 const banklinkingRoutes = require("./routes/banklinking");
 const googleAuthRoutes = require("./routes/googleAuth");
 const refreshRoutes = require("./routes/refresh");
